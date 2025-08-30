@@ -359,26 +359,54 @@ def unfold_to_2d_nets(graph, mesh):
             # 3D: get parent and child normals, shared edge direction
             parent_face_3d = vertices[parent_face]
             child_face_3d = verts3d
-            # Get parent normal
-            def face_normal(verts):
-                v0, v1, v2 = verts[0], verts[1], verts[2]
-                return np.cross(v1-v0, v2-v0)
-            n_parent = face_normal(parent_face_3d)
-            n_child = face_normal(child_face_3d)
+            # Robust normal calculation using all vertices (Newell's method)
+            def robust_normal(verts):
+                n = np.zeros(3)
+                for i in range(len(verts)):
+                    v_curr = verts[i]
+                    v_next = verts[(i+1)%len(verts)]
+                    n[0] += (v_curr[1] - v_next[1]) * (v_curr[2] + v_next[2])
+                    n[1] += (v_curr[2] - v_next[2]) * (v_curr[0] + v_next[0])
+                    n[2] += (v_curr[0] - v_next[0]) * (v_curr[1] + v_next[1])
+                return n / (np.linalg.norm(n)+1e-12)
+            n_parent = robust_normal(parent_face_3d)
+            n_child = robust_normal(child_face_3d)
             edge3d = verts3d[child_edge_idx[1]] - verts3d[child_edge_idx[0]]
             # Dihedral sign: positive if child is folded "outwards" from parent
-            dihedral_sign = np.sign(np.dot(np.cross(n_parent, n_child), edge3d))
+            dihedral_raw = np.dot(np.cross(n_parent, n_child), edge3d)
+            epsilon = 1e-8
+            dihedral_sign = 1 if dihedral_raw > epsilon else -1 if dihedral_raw < -epsilon else 0
             # 2D: check which side vC is on relative to parent edge
             cross2d = (vB[0]-vA[0])*(vC[1]-vA[1]) - (vB[1]-vA[1])*(vC[0]-vA[0])
-            fold_sign_2d = np.sign(cross2d)
+            fold_sign_2d = 1 if cross2d > epsilon else -1 if cross2d < -epsilon else 0
             # If 2D fold direction does not match 3D, reflect across edge
             if fold_sign_2d != dihedral_sign and fold_sign_2d != 0 and dihedral_sign != 0:
-                # Reflect verts2d across edge vA-vB
                 edge_dir = (vB-vA)/np.linalg.norm(vB-vA)
                 perp = np.array([-edge_dir[1], edge_dir[0]])
                 verts2d = verts2d - vA
                 verts2d = verts2d - 2*np.dot(verts2d, perp)[:,None]*perp
                 verts2d = verts2d + vA
+            # As a last resort, check for overlap with already-placed faces and flip if needed
+            def poly_overlap(poly1, poly2):
+                from matplotlib.path import Path
+                path1 = Path(poly1)
+                path2 = Path(poly2)
+                for pt in poly1:
+                    if path2.contains_point(pt):
+                        return True
+                for pt in poly2:
+                    if path1.contains_point(pt):
+                        return True
+                return False
+            for other in placed.values():
+                if poly_overlap(verts2d, other):
+                    # Flip across edge
+                    edge_dir = (vB-vA)/np.linalg.norm(vB-vA)
+                    perp = np.array([-edge_dir[1], edge_dir[0]])
+                    verts2d = verts2d - vA
+                    verts2d = verts2d - 2*np.dot(verts2d, perp)[:,None]*perp
+                    verts2d = verts2d + vA
+                    break
             placed[face_idx] = verts2d
             return verts2d
         # Place root
