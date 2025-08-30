@@ -5,10 +5,53 @@ import open3d as o3d
 
 from polygon_mesh import PolygonMesh
 
+
+def clean_and_weld_mesh(mesh, weld_tol=1e-5):
+    # Remove duplicate/close vertices and update faces
+    verts = np.asarray(mesh.vertices)
+    faces = np.asarray(mesh.faces)
+    # Weld vertices: snap close vertices together
+    from scipy.spatial import cKDTree
+    kdtree = cKDTree(verts)
+    groups = kdtree.query_ball_point(verts, weld_tol)
+    # Map each vertex to its group leader
+    leader = np.arange(len(verts))
+    for i, group in enumerate(groups):
+        min_idx = min(group)
+        leader[i] = min_idx
+    # Remap all vertices to their leader
+    unique_map = {old: new for old, new in enumerate(leader)}
+    verts_new = []
+    old_to_new = {}
+    for i, idx in enumerate(leader):
+        if idx == i:
+            old_to_new[i] = len(verts_new)
+            verts_new.append(verts[i])
+        else:
+            old_to_new[i] = old_to_new[idx]
+    verts_new = np.array(verts_new)
+    # Remap faces
+    faces_new = np.vectorize(lambda x: old_to_new[x])(faces)
+    # Remove degenerate (zero-area or duplicate-vertex) faces
+    faces_clean = []
+    for f in faces_new:
+        if len(set(f)) < 3:
+            continue
+        v0, v1, v2 = verts_new[f[0]], verts_new[f[1]], verts_new[f[2]]
+        area = np.linalg.norm(np.cross(v1-v0, v2-v0)) * 0.5
+        if area < 1e-10:
+            continue
+        faces_clean.append(f)
+    faces_clean = np.array(faces_clean)
+    mesh_clean = trimesh.Trimesh(vertices=verts_new, faces=faces_clean, process=False)
+    mesh_clean.remove_unreferenced_vertices()
+    return mesh_clean
+
 def load_mesh(filename):
     mesh = trimesh.load(filename, force='mesh')
     if not isinstance(mesh, trimesh.Trimesh):
         raise ValueError("Loaded file is not a mesh.")
+    mesh = clean_and_weld_mesh(mesh)
     return mesh
 
 def trimesh_to_polygonmesh(mesh):
@@ -76,37 +119,38 @@ def merge_coplanar_faces(pmesh, angle_tol_deg=1.0):
             queue.extend(adj[curr] - group)
         groups.append(sorted(group))
     # For each group, extract boundary and order it into a polygon
-    print(f"[DEBUG] Found {len(groups)} coplanar groups.")
+    #print(f"[DEBUG] Found {len(groups)} coplanar groups.")
     merged_faces = []
     for i, group in enumerate(groups):
         
         if len(group) == 1:
             merged_faces.append(faces[group[0]])
             continue
-        else: print(f"[DEBUG]  Group {i}: {len(group)} faces.")
-        # Collect all edges and count occurrences
-        edge_count = {}
-        for idx in group:
-            f = faces[idx]
-            n = len(f)
-            for k in range(n):
-                e = (f[k], f[(k+1)%n])
-                e_sorted = tuple(sorted(e))
-                edge_count[e_sorted] = edge_count.get(e_sorted, 0) + 1
-        # Check for non-manifold edges (edges shared by >2 faces)
-        nonmanifold_edges = [e for e, c in edge_count.items() if c > 2]
-        if nonmanifold_edges:
-            print(f"[DEBUG]   Skipping group {i} (non-manifold edges detected: {len(nonmanifold_edges)})")
-            for e in nonmanifold_edges:
-                print(f"[DEBUG]    Non-manifold edge: {e}")
-            # Keep original triangles
+        else:
+            #print(f"[DEBUG]  Group {i}: {len(group)} faces.")
+            # Collect all edges and count occurrences
+            edge_count = {}
             for idx in group:
-                merged_faces.append(faces[idx])
-            continue
+                f = faces[idx]
+                n = len(f)
+                for k in range(n):
+                    e = (f[k], f[(k+1)%n])
+                    e_sorted = tuple(sorted(e))
+                    edge_count[e_sorted] = edge_count.get(e_sorted, 0) + 1
+            # Check for non-manifold edges (edges shared by >2 faces)
+            nonmanifold_edges = [e for e, c in edge_count.items() if c > 2]
+            if nonmanifold_edges:
+                #print(f"[DEBUG]   Skipping group {i} (non-manifold edges detected: {len(nonmanifold_edges)})")
+                for e in nonmanifold_edges:
+                    pass  # debug print placeholder
+                # Keep original triangles
+                for idx in group:
+                    merged_faces.append(faces[idx])
+                continue
         # Boundary edges appear only once
         boundary_edges = [e for e, c in edge_count.items() if c == 1]
         if not boundary_edges or len(boundary_edges) < 3:
-            print(f"[DEBUG]   Skipping group {i} (no valid boundary or open boundary detected)")
+            #print(f"[DEBUG]   Skipping group {i} (no valid boundary or open boundary detected)")
             # Keep original triangles
             for idx in group:
                 merged_faces.append(faces[idx])
@@ -127,7 +171,7 @@ def merge_coplanar_faces(pmesh, angle_tol_deg=1.0):
         # 2. Boundary edges are those that appear only once
         boundary_edges = [e for e, c in edge_count.items() if c == 1]
         if not boundary_edges:
-            print(f"[DEBUG]   No boundary found for group {i}, keeping original triangles")
+            #print(f"[DEBUG]   No boundary found for group {i}, keeping original triangles")
             for idx in group:
                 merged_faces.append(faces[idx])
             continue
@@ -168,12 +212,12 @@ def merge_coplanar_faces(pmesh, angle_tol_deg=1.0):
             polygon = polygon[:-1]
         if len(polygon) >= 3 and len(set(polygon)) == len(polygon):
             merged_faces.append(polygon)
-            print(f"[DEBUG]   Merged polygon with {len(polygon)} vertices.")
+            #print(f"[DEBUG]   Merged polygon with {len(polygon)} vertices.")
         else:
-            print(f"[DEBUG]   Skipping group {i} (could not robustly extract polygon, keeping original triangles)")
+            #print(f"[DEBUG]   Skipping group {i} (could not robustly extract polygon, keeping original triangles)")
             for idx in group:
                 merged_faces.append(faces[idx])
-    print(f"[DEBUG] Output mesh: {len(merged_faces)} faces.")
+    #print(f"[DEBUG] Output mesh: {len(merged_faces)} faces.")
     return PolygonMesh(verts, merged_faces)
 
 def _faces_share_edge(f1, f2):

@@ -1,15 +1,26 @@
 import os
 import random
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QFileDialog, QColorDialog
+from PyQt5.QtWidgets import QVBoxLayout, QPushButton, QFileDialog, QColorDialog, QWidget, QLabel
+from stage3 import ResponsiveWidget
 from pyvista_viewer import PyVistaViewer
 from mesh_utils import load_mesh, trimesh_to_polygonmesh
 MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models')
 
-class Stage1Widget(QWidget):
+class Stage1Widget(ResponsiveWidget):
     def __init__(self, model_viewer, parent=None):
         super().__init__(parent)
         self.model_viewer = model_viewer
-        layout = QVBoxLayout()
+        self._setup_layout()
+        self.load_random_model()
+
+    def _setup_layout(self):
+        # Top: all controls stacked vertically
+        top_container = QWidget()
+        top_layout = QVBoxLayout(top_container)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(8)
+        self.stats_label = QLabel('')
+        top_layout.addWidget(self.stats_label)
         self.import_btn = QPushButton('Import Model')
         self.random_btn = QPushButton('Random Model')
         self.colour_btn = QPushButton('Toggle Colour')
@@ -17,7 +28,10 @@ class Stage1Widget(QWidget):
         self.spin_btn = QPushButton('Toggle Autospin')
         self.bgcolor_btn = QPushButton('Set Background Color')
         self.next_btn = QPushButton('Next')
-
+        for btn in [self.import_btn, self.random_btn, self.colour_btn, self.wire_btn, self.spin_btn, self.bgcolor_btn, self.next_btn]:
+            top_layout.addWidget(btn)
+        self.layout().addWidget(top_container)
+        # Connect buttons
         self.import_btn.clicked.connect(self.import_model)
         self.random_btn.clicked.connect(self.load_random_model)
         self.colour_btn.clicked.connect(self.toggle_colour)
@@ -25,13 +39,23 @@ class Stage1Widget(QWidget):
         self.spin_btn.clicked.connect(self.toggle_autospin)
         self.bgcolor_btn.clicked.connect(self.set_background_color)
 
-        for btn in [self.import_btn, self.random_btn, self.colour_btn, self.wire_btn, self.spin_btn, self.bgcolor_btn, self.next_btn]:
-            layout.addWidget(btn)
-        layout.addStretch()
-        self.setLayout(layout)
-
-        # Load a random model on startup
-        self.load_random_model()
+    def _responsive_resize(self):
+        # Calculate font size to fit button/label width and text length
+        min_font = 14
+        max_font = 28
+        btns = [self.import_btn, self.random_btn, self.colour_btn, self.wire_btn, self.spin_btn, self.bgcolor_btn, self.next_btn]
+        for btn in btns:
+            text_len = len(btn.text())
+            btn_width = max(120, int(self.width() * 0.25))
+            font_size = max(min_font, min(max_font, int(btn_width / (text_len * 1.2))))
+            btn.setStyleSheet(f"font-size: {font_size}px;")
+            btn.setMinimumWidth(btn_width)
+            btn.setMinimumHeight(64)  # Double the default height
+        # Stats label: wrap and fit
+        self.stats_label.setWordWrap(True)
+        label_width = self.width() - 40
+        font_size = max(min_font, min(max_font, int(label_width / 18)))
+        self.stats_label.setStyleSheet(f"font-size: {font_size}px;")
 
     def set_background_color(self):
         

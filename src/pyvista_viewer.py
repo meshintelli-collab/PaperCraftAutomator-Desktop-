@@ -45,9 +45,6 @@ class PyVistaViewer(QWidget):
         faces_pv = np.array(faces_pv)
         mesh = pv.PolyData(verts, faces_pv)
         # Store and reuse face colors for this mesh
-        if not hasattr(pmesh, '_face_colors') or len(getattr(pmesh, '_face_colors', [])) != len(faces):
-            n_faces = len(faces)
-            pmesh._face_colors = (np.random.rand(n_faces, 3) * 0.5 + 0.5)
         # Compute and store centroid for autospin
         self._mesh_centroid = verts.mean(axis=0) if verts.shape[0] > 0 else np.zeros(3)
         # If mesh topology changed, recreate actor
@@ -65,6 +62,10 @@ class PyVistaViewer(QWidget):
         if recreate:
             self.clear()
             if self._color_faces:
+                # Ensure _face_colors exists and is correct length
+                if not hasattr(pmesh, '_face_colors') or len(getattr(pmesh, '_face_colors', [])) != len(faces):
+                    n_faces = len(faces)
+                    pmesh._face_colors = (np.random.rand(n_faces, 3) * 0.5 + 0.5)
                 mesh.cell_data['colors'] = (pmesh._face_colors * 255).astype(np.uint8)
                 self._mesh_actor = self.plotter.add_mesh(mesh, scalars='colors', rgb=True, show_edges=self._wireframe, opacity=0.85)
             else:
@@ -77,6 +78,10 @@ class PyVistaViewer(QWidget):
         else:
             # Update color/wireframe in place
             if self._color_faces:
+                # Ensure _face_colors exists and is correct length
+                if not hasattr(pmesh, '_face_colors') or len(getattr(pmesh, '_face_colors', [])) != len(faces):
+                    n_faces = len(faces)
+                    pmesh._face_colors = (np.random.rand(n_faces, 3) * 0.5 + 0.5)
                 self._mesh_actor.GetMapper().SetScalarModeToUseCellData()
                 self._mesh_actor.GetMapper().SetScalarVisibility(True)
                 self._mesh_actor.GetMapper().SetInputData(mesh)

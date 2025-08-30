@@ -7,3 +7,6 @@ trimesh
 pyvista
 pyvistaqt
 noise
+networkx
+plotly
+PyQtWebEngine

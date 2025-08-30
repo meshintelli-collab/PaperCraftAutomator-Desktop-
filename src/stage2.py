@@ -2,21 +2,30 @@ import numpy as np
 import math
 import trimesh
 from collections import defaultdict, deque, Counter
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QSlider, QHBoxLayout, QPushButton
+from PyQt5.QtWidgets import QVBoxLayout, QLabel, QSlider, QHBoxLayout, QPushButton, QWidget
+from stage3 import ResponsiveWidget
 from PyQt5.QtCore import Qt
 from mesh_utils import simplify_mesh, merge_coplanar_faces, trimesh_to_polygonmesh
 import traceback
 
-class Stage2Widget(QWidget):
-    def __init__(self, model_viewer, parent=None):
-        super().__init__(parent)
+class Stage2Widget(ResponsiveWidget):
+    def __init__(self, model_viewer, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.model_viewer = model_viewer
-        layout = QVBoxLayout()
-        # Face stats at the top
-        self.face_count_label = QLabel("Faces: N/A")
-        layout.addWidget(self.face_count_label)
+        self._setup_layout()
+        self._merged_polygons = None
+        self._update_face_count()
+        if hasattr(self.model_viewer, 'model_changed_callbacks'):
+            self.model_viewer.model_changed_callbacks.append(self._update_face_count)
 
-        # Simplification slider (percent)
+    def _setup_layout(self):
+        # Top: all controls stacked vertically
+        top_container = QWidget()
+        top_layout = QVBoxLayout(top_container)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(8)
+        self.face_count_label = QLabel("Faces: N/A")
+        top_layout.addWidget(self.face_count_label)
         slider_layout = QHBoxLayout()
         self.simplify_slider = QSlider(Qt.Horizontal)
         self.simplify_slider.setMinimum(10)
@@ -24,25 +33,41 @@ class Stage2Widget(QWidget):
         self.simplify_slider.setValue(50)
         slider_layout.addWidget(QLabel("Decimation (% faces kept):"))
         slider_layout.addWidget(self.simplify_slider)
-        layout.addLayout(slider_layout)
-
-        # Simplify button
+        top_layout.addLayout(slider_layout)
         self.simplify_btn = QPushButton("Simplify")
         self.simplify_btn.clicked.connect(self._on_simplify)
-        layout.addWidget(self.simplify_btn)
-
-        # Coplanar merge button
+        top_layout.addWidget(self.simplify_btn)
         self.merge_btn = QPushButton("Merge Coplanar Faces")
         self.merge_btn.clicked.connect(self._on_merge)
-        layout.addWidget(self.merge_btn)
+        top_layout.addWidget(self.merge_btn)
+        self.next_btn = QPushButton('Next')
+        top_layout.addWidget(self.next_btn)
+        self.layout().addWidget(top_container)
 
-        layout.addStretch(1)  # Push controls to the top
-        self.setLayout(layout)
-        self._merged_polygons = None
-        self._update_face_count()
-        # Register for model changes if supported
-        if hasattr(self.model_viewer, 'model_changed_callbacks'):
-            self.model_viewer.model_changed_callbacks.append(self._update_face_count)
+    def _responsive_resize(self):
+        min_font = 14
+        max_font = 28
+        btns = [self.simplify_btn, self.merge_btn, self.next_btn]
+        for btn in btns:
+            text_len = len(btn.text())
+            btn_width = max(120, int(self.width() * 0.25))
+            font_size = max(min_font, min(max_font, int(btn_width / (text_len * 1.2))))
+            btn.setStyleSheet(f"font-size: {font_size}px;")
+            btn.setMinimumWidth(btn_width)
+            btn.setMinimumHeight(64)
+        # Face count label: wrap and fit
+        self.face_count_label.setWordWrap(True)
+        label_width = self.width() - 40
+        font_size = max(min_font, min(max_font, int(label_width / 18)))
+        self.face_count_label.setStyleSheet(f"font-size: {font_size}px;")
+        # Slider label
+        for i in range(self.layout().count()):
+            item = self.layout().itemAt(i)
+            if isinstance(item, QHBoxLayout):
+                for j in range(item.count()):
+                    w = item.itemAt(j).widget()
+                    if isinstance(w, QLabel):
+                        w.setStyleSheet(f"font-size: {font_size}px;")
 
 
 
