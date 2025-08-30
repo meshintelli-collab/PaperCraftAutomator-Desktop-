@@ -1,0 +1,30 @@
+solid exported_solid
+  facet normal 0.000000 0.676481 0.736460
+    outer loop
+      vertex 0.000000 4.082483 5.000000
+      vertex -5.000000 -1.360828 10.000000
+      vertex 5.000000 -1.360828 10.000000
+    endloop
+  endfacet
+  facet normal 0.827340 0.379980 -0.413670
+    outer loop
+      vertex 0.000000 4.082483 5.000000
+      vertex 5.000000 -1.360828 10.000000
+      vertex 0.000000 -1.360828 0.000000
+    endloop
+  endfacet
+  facet normal -0.827340 0.379980 -0.413670
+    outer loop
+      vertex 0.000000 4.082483 5.000000
+      vertex 0.000000 -1.360828 0.000000
+      vertex -5.000000 -1.360828 10.000000
+    endloop
+  endfacet
+  facet normal 0.000000 -1.000000 0.000000
+    outer loop
+      vertex 0.000000 -1.360828 0.000000
+      vertex 5.000000 -1.360828 10.000000
+      vertex -5.000000 -1.360828 10.000000
+    endloop
+  endfacet
+endsolid exported_solid

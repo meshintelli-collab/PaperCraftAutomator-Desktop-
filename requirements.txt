@@ -1,0 +1,9 @@
+numpy
+open3d
+PyQt5
+numpy
+open3d
+trimesh
+pyvista
+pyvistaqt
+noise
