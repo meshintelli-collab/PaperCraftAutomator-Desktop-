@@ -233,3 +233,186 @@ def _merge_faces(faces):
         if v not in uniq:
             uniq.append(v)
     return uniq
+
+def unfold_to_2d_nets(graph, mesh):
+    import networkx as nx
+    if graph is None or mesh is None:
+        return []
+    faces = mesh.faces if hasattr(mesh, 'faces') else mesh['faces']
+    vertices = mesh.vertices if hasattr(mesh, 'vertices') else mesh['vertices']
+    nets = []
+    net_offset_x = 0.0
+    for component in nx.connected_components(graph):
+        root = next(iter(component))
+        placed = {}
+        face_to_parent = {}
+        face_to_shared = {}
+        from collections import deque, defaultdict
+        queue = deque([root])
+        visited = set([root])
+        layer_map = {root: 0}
+        bfs_layers = defaultdict(list)
+        while queue:
+            fidx = queue.popleft()
+            for nbr in graph.neighbors(fidx):
+                if nbr not in visited:
+                    f1, f2 = faces[fidx], faces[nbr]
+                    shared = list(set(f1) & set(f2))
+                    if len(shared) == 2:
+                        idxs_f1 = [f1.index(shared[0]), f1.index(shared[1])]
+                        idxs_f2 = [f2.index(shared[0]), f2.index(shared[1])]
+                        face_to_parent[nbr] = fidx
+                        face_to_shared[nbr] = (idxs_f2, idxs_f1, shared)
+                        queue.append(nbr)
+                        visited.add(nbr)
+                        layer_map[nbr] = layer_map[fidx] + 1
+        def best_fit_plane(points):
+            centroid = points.mean(axis=0)
+            uu, dd, vv = np.linalg.svd(points - centroid)
+            normal = vv[2]
+            return centroid, normal
+        def flatten_face(face_idx, ref_2d=None, ref_3d=None, shared_idxs=None):
+            face = faces[face_idx]
+            verts3d = vertices[face]
+            if ref_2d is None:
+                centroid, normal = best_fit_plane(verts3d)
+                z_axis = np.array([0,0,1])
+                axis = np.cross(normal, z_axis)
+                angle = np.arccos(np.clip(np.dot(normal, z_axis), -1, 1))
+                if np.linalg.norm(axis) < 1e-8:
+                    R = np.eye(3)
+                else:
+                    axis = axis / np.linalg.norm(axis)
+                    K = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+                    R = np.eye(3) + np.sin(angle)*K + (1-np.cos(angle))*(K@K)
+                verts3d_flat = (verts3d - centroid) @ R.T
+                verts2d = verts3d_flat[:,:2]
+                placed[face_idx] = verts2d
+                return verts2d
+            idxs_child, idxs_parent, shared = shared_idxs
+            parent_face = faces[face_to_parent[face_idx]]
+            parent_2d = ref_2d
+            # Find the ordered shared edge in parent
+            for i in range(len(parent_face)):
+                if parent_face[i] == shared[0] and parent_face[(i+1)%len(parent_face)] == shared[1]:
+                    parent_edge_idx = (i, (i+1)%len(parent_face))
+                    break
+                if parent_face[i] == shared[1] and parent_face[(i+1)%len(parent_face)] == shared[0]:
+                    parent_edge_idx = ((i+1)%len(parent_face), i)
+                    break
+            else:
+                return None
+            # Find the ordered shared edge in child
+            for i in range(len(face)):
+                if face[i] == shared[0] and face[(i+1)%len(face)] == shared[1]:
+                    child_edge_idx = (i, (i+1)%len(face))
+                    break
+                if face[i] == shared[1] and face[(i+1)%len(face)] == shared[0]:
+                    child_edge_idx = ((i+1)%len(face), i)
+                    break
+            else:
+                return None
+            # Get 2D coordinates of parent edge
+            vA2, vB2 = parent_2d[parent_edge_idx[0]], parent_2d[parent_edge_idx[1]]
+            # Flatten child face to XY
+            centroid, normal = best_fit_plane(verts3d)
+            z_axis = np.array([0,0,1])
+            axis = np.cross(normal, z_axis)
+            angle = np.arccos(np.clip(np.dot(normal, z_axis), -1, 1))
+            if np.linalg.norm(axis) < 1e-8:
+                R = np.eye(3)
+            else:
+                axis = axis / np.linalg.norm(axis)
+                K = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+                R = np.eye(3) + np.sin(angle)*K + (1-np.cos(angle))*(K@K)
+            verts3d_flat = (verts3d - verts3d[child_edge_idx[0]]) @ R.T
+            verts2d = verts3d_flat[:,:2]
+            # Get child edge in 2D
+            vA2c, vB2c = verts2d[child_edge_idx[0]], verts2d[child_edge_idx[1]]
+            # If direction is opposite, flip child face
+            parent_vec = vB2 - vA2
+            child_vec = vB2c - vA2c
+            if np.linalg.norm(child_vec) < 1e-8 or np.linalg.norm(parent_vec) < 1e-8:
+                return None
+            if np.dot(parent_vec, child_vec) < 0:
+                # Flip child face in 2D (reverse order)
+                verts2d = verts2d[::-1]
+                vA2c, vB2c = verts2d[child_edge_idx[1]], verts2d[child_edge_idx[0]]
+                child_vec = vB2c - vA2c
+            # Rotate child so edge aligns with parent edge
+            angle2 = np.arctan2(parent_vec[1], parent_vec[0]) - np.arctan2(child_vec[1], child_vec[0])
+            R2 = np.array([[np.cos(angle2), -np.sin(angle2)], [np.sin(angle2), np.cos(angle2)]])
+            verts2d = verts2d @ R2.T
+            # Translate so both endpoints match
+            offset = vA2 - verts2d[child_edge_idx[0]]
+            verts2d = verts2d + offset
+            # After transform, ensure both endpoints match exactly
+            verts2d[child_edge_idx[0]] = vA2
+            verts2d[child_edge_idx[1]] = vB2
+            # Ensure face is folded outwards (not back over parent):
+            n = len(face)
+            next_child_idx = (child_edge_idx[1]+1)%n
+            vA = vA2
+            vB = vB2
+            vC = verts2d[next_child_idx]
+            # --- Robust fold direction check ---
+            # 3D: get parent and child normals, shared edge direction
+            parent_face_3d = vertices[parent_face]
+            child_face_3d = verts3d
+            # Get parent normal
+            def face_normal(verts):
+                v0, v1, v2 = verts[0], verts[1], verts[2]
+                return np.cross(v1-v0, v2-v0)
+            n_parent = face_normal(parent_face_3d)
+            n_child = face_normal(child_face_3d)
+            edge3d = verts3d[child_edge_idx[1]] - verts3d[child_edge_idx[0]]
+            # Dihedral sign: positive if child is folded "outwards" from parent
+            dihedral_sign = np.sign(np.dot(np.cross(n_parent, n_child), edge3d))
+            # 2D: check which side vC is on relative to parent edge
+            cross2d = (vB[0]-vA[0])*(vC[1]-vA[1]) - (vB[1]-vA[1])*(vC[0]-vA[0])
+            fold_sign_2d = np.sign(cross2d)
+            # If 2D fold direction does not match 3D, reflect across edge
+            if fold_sign_2d != dihedral_sign and fold_sign_2d != 0 and dihedral_sign != 0:
+                # Reflect verts2d across edge vA-vB
+                edge_dir = (vB-vA)/np.linalg.norm(vB-vA)
+                perp = np.array([-edge_dir[1], edge_dir[0]])
+                verts2d = verts2d - vA
+                verts2d = verts2d - 2*np.dot(verts2d, perp)[:,None]*perp
+                verts2d = verts2d + vA
+            placed[face_idx] = verts2d
+            return verts2d
+        # Place root
+        flatten_face(root)
+        # Place all children breadth-first and group by BFS layer
+        queue = deque([root])
+        visited = set([root])
+        bfs_layers = defaultdict(list)
+        while queue:
+            fidx = queue.popleft()
+            poly = placed[fidx]
+            bfs_layers[layer_map[fidx]].append(poly)
+            for nbr in graph.neighbors(fidx):
+                if nbr not in visited and nbr in face_to_parent:
+                    shared_idxs = face_to_shared[nbr]
+                    ref_2d = placed[face_to_parent[nbr]]
+                    flatten_face(nbr, ref_2d, None, shared_idxs)
+                    queue.append(nbr)
+                    visited.add(nbr)
+        # Sort layers by BFS order
+        bfs_layers_sorted = [bfs_layers[i] for i in sorted(bfs_layers.keys())]
+        polygons = [placed[fidx] for fidx in placed]
+        # Center and scale to fit in [-1,1], then offset horizontally
+        all_pts = np.vstack(polygons)
+        min_xy = all_pts.min(axis=0)
+        max_xy = all_pts.max(axis=0)
+        center = (min_xy + max_xy) / 2
+        scale = 1.8 / max(max_xy - min_xy) if np.any(max_xy - min_xy > 0) else 1.0
+        polygons = [(poly - center) * scale + np.array([net_offset_x, 0]) for poly in polygons]
+        # Also scale/offset each layer for animation
+        bfs_layers_scaled = []
+        for layer in bfs_layers_sorted:
+            layer_polys = [(np.array(poly) - center) * scale + np.array([net_offset_x, 0]) for poly in layer]
+            bfs_layers_scaled.append(layer_polys)
+        net_offset_x += (max_xy[0] - min_xy[0]) * scale + 1.0
+        nets.append({'polygons': polygons, 'bfs_layers': bfs_layers_scaled})
+    return nets

@@ -2,6 +2,7 @@ from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QStackedWidget, Q
 from stage1 import Stage1Widget
 from stage2 import Stage2Widget
 from stage3 import Stage3Widget
+from stage4 import Stage4Widget
 from pyvista_viewer import PyVistaViewer
 
 class StageMenu(QListWidget):
@@ -38,13 +39,18 @@ class MainWindow(QMainWindow):
         self.model_viewer = PyVistaViewer()
         self.stage1 = Stage1Widget(self.model_viewer)
         self.stage2 = Stage2Widget(self.model_viewer)
-        # Stage 3: Build Graph & Spanning Tree
         self.stage3 = Stage3Widget(self.get_current_mesh)
+        self.stage4 = Stage4Widget(
+            get_mesh_callback=self.get_current_mesh,
+            get_graph_callback=lambda: getattr(self.stage3, 'graph', None),
+            get_tree_edges_callback=lambda: getattr(self.stage3, 'spanning_tree', None)
+        )
         self.stage_stack.addWidget(self.stage1)
         self.stage_stack.addWidget(self.stage2)
         self.stage_stack.addWidget(self.stage3)
-    # Placeholder for other stages
-        for _ in range(4):
+        self.stage_stack.addWidget(self.stage4)
+        # Add placeholders for remaining stages
+        for _ in range(3):
             self.stage_stack.addWidget(QLabel('Stage coming soon...'))
         self.main_layout = QHBoxLayout()
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -71,6 +77,7 @@ class MainWindow(QMainWindow):
         self.stage1.next_btn.clicked.connect(self.next_stage)
         self.stage2.next_btn.clicked.connect(self.next_stage)
         self.stage3.next_btn.clicked.connect(self.next_stage)
+        self.stage4.next_btn.clicked.connect(self.next_stage)
 
     def change_stage(self, idx):
         # If leaving Stage 3 while edit mode is active, block and show popup
@@ -79,15 +86,24 @@ class MainWindow(QMainWindow):
             # Optionally, set focus to the edit button or flash it
             return
         self.stage_stack.setCurrentIndex(idx)
-        # Swap viewer: 3D for all except Stage 3, matplotlib canvas for Stage 3
+        # Swap viewer: 3D for all except Stage 3, matplotlib canvas for Stage 3 and Stage 4
         while self.viewer_layout.count():
             item = self.viewer_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.setParent(None)
         if idx == 2:  # Stage 3
-            self.viewer_layout.addWidget(self.stage3.viewer_widget)
-            self.stage3.show_graph()  # Automatically show the graph
+            self.viewer_layout.addWidget(self.stage3.canvas)
+            self.stage3.show_graph()
+        elif idx == 3:  # Stage 4
+            self.viewer_layout.addWidget(self.stage4.canvas)
+            # Pass graph and mesh from Stage 3 to Stage 4
+            graph = getattr(self.stage3, 'graph', None)
+            mesh = self.get_current_mesh()
+            if graph and mesh:
+                self.stage4.set_graph_and_mesh(graph, mesh)
+            else:
+                self.stage4._draw_placeholder()
         else:
             self.viewer_layout.addWidget(self.model_viewer)
 

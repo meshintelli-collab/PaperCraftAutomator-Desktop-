@@ -67,12 +67,12 @@ Press “Unfold” button.
 
 Backend:
 Pick root face for each tree.
-Recursively unfold adjacent faces into 2D using hinge rotations.
+Recursively unfold adjacent faces into 2D using hinge rotations, or some other methodology of unfolding the nets.
 Track 3D→2D vertex mapping.
 
 GUI Representation:
-Animation: faces peel open and flatten.
-2D canvas shows final unfolded polygons.
+Starts with the graph from stage 3, in whatever state it was left in.
+animation: 2D canvas shows final unfolded polygons.
 
 
 Stage 5: Annotate with Tabs & Labels
@@ -89,7 +89,9 @@ Label edge pair with unique ID.
 
 GUI Representation:
 Tabs drawn on 2D canvas extending from polygons.
-Labels fade in over 5–10 seconds for visual effect.
+edge labels, face labels. 
+edges are dotted for fold, and solid for cutting.
+edge for folding (dotted) have the angle of folding annotated on them in the middle.
 
 
 Stage 6: Bin Packing & Layout
@@ -175,4 +177,47 @@ class Graph:
     faces: dict[int, Face]
     edges: dict[int, Edge]
     vertices: dict[int, Vertex]
+
+
+
+
+
+UNFOLDING ALGORITHM STEPS
+
+Here’s a clear breakdown of the 3D-to-2D unfolding algorithm for a papercraft net, tailored to your project’s data structures and workflow:
+
+1. Input
+Mesh: List of faces (polygons), each with ordered vertex indices and 3D coordinates.
+Spanning Tree(s): For each connected component, a tree structure where each node is a face and edges represent non-cut (hinge) connections.
+2. Algorithm Steps
+a. Choose Root Face
+For each tree, pick a root face (e.g., the largest, or just the first in the list).
+b. Place Root Face in 2D
+Project the root face’s 3D vertices onto the 2D plane (e.g., XY plane), preserving edge lengths.
+c. Recursively Unfold Adjacent Faces
+For each neighbor face connected by a hinge (tree edge):
+Identify Shared Edge: Find the two shared vertices between the parent and child face.
+Compute Hinge Axis: The shared edge in 3D is the axis of rotation.
+Calculate Rotation: Determine the dihedral angle between the parent and child face normals.
+Transform Child Face:
+Rotate the child face around the shared edge so it lies flat in 2D, attached to the parent.
+Place the shared edge in the same 2D location as in the parent.
+Map the rest of the child’s vertices using the rotation.
+Repeat: Recursively unfold all unplaced neighbors.
+d. Track 3D→2D Mapping
+Maintain a mapping from each 3D vertex to its 2D position for each face as it is placed.
+e. Handle Multiple Trees
+Repeat the above for each connected component (forest), producing multiple 2D nets if needed.
+3. Output
+For each tree: a set of 2D polygons (nets), each corresponding to a face, with shared edges aligned.
+4. Notes & Best Practices
+Edge Consistency: Always align shared edges exactly in 2D to avoid gaps/overlaps.
+Numerical Stability: Use robust geometric calculations to avoid drift as you recurse.
+Cycles: The spanning tree ensures no cycles, so unfolding is always possible without overlap.
+Disconnected Components: Each tree produces a separate net.
+Summary:
+The algorithm is a recursive “hinge unfolding” process, starting from a root face and laying out each adjacent face in 2D by rotating it around the shared edge, using the spanning tree to avoid cycles and overlaps.
+
+
+
 -->
