@@ -25,6 +25,7 @@ class PyVistaViewer(QWidget):
         self._wireframe = False
         self._autospin = False
         self._spin_timer = None
+        self.model_changed_callbacks = []
 
     def clear(self):
         self.plotter.clear()
@@ -89,6 +90,12 @@ class PyVistaViewer(QWidget):
                 self._mesh_actor.GetProperty().SetOpacity(0.85)
             self._mesh_actor.GetProperty().SetEdgeVisibility(self._wireframe)
         self._last_polymesh = pmesh
+        # Notify listeners that the model has changed
+        for cb in self.model_changed_callbacks:
+            try:
+                cb()
+            except Exception as e:
+                print(f"[DEBUG] Model changed callback error: {e}")
         if reset_camera and recreate:
             self.plotter.reset_camera()
         if self._autospin:

@@ -18,7 +18,6 @@ class Stage1Widget(QWidget):
         self.bgcolor_btn = QPushButton('Set Background Color')
         self.next_btn = QPushButton('Next')
 
-
         self.import_btn.clicked.connect(self.import_model)
         self.random_btn.clicked.connect(self.load_random_model)
         self.colour_btn.clicked.connect(self.toggle_colour)
@@ -30,6 +29,9 @@ class Stage1Widget(QWidget):
             layout.addWidget(btn)
         layout.addStretch()
         self.setLayout(layout)
+
+        # Load a random model on startup
+        self.load_random_model()
 
     def set_background_color(self):
         

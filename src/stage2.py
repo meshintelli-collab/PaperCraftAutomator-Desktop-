@@ -40,6 +40,9 @@ class Stage2Widget(QWidget):
         self.setLayout(layout)
         self._merged_polygons = None
         self._update_face_count()
+        # Register for model changes if supported
+        if hasattr(self.model_viewer, 'model_changed_callbacks'):
+            self.model_viewer.model_changed_callbacks.append(self._update_face_count)
 
 
 
@@ -188,10 +191,20 @@ class Stage2Widget(QWidget):
             print(f"Coplanar merge crashed: {e}\n{traceback.format_exc()}")
 
     def _update_face_count(self):
-        # If merged polygons exist, show their count; else show polygon count
+        # Show face, vertex, and edge stats
         pmesh = getattr(self.model_viewer, '_last_polymesh', None)
         if pmesh is not None:
             n_polys = len(pmesh.faces)
-            self.face_count_label.setText(f"Faces: {n_polys}")
+            n_verts = len({tuple(v) for v in pmesh.vertices})
+            # Count unique edges
+            edge_set = set()
+            for face in pmesh.faces:
+                n = len(face)
+                for i in range(n):
+                    v1, v2 = face[i], face[(i+1)%n]
+                    edge = tuple(sorted((v1, v2)))
+                    edge_set.add(edge)
+            n_edges = len(edge_set)
+            self.face_count_label.setText(f"Faces: {n_polys}   Vertices: {n_verts}   Edges: {n_edges}")
         else:
-            self.face_count_label.setText("Faces: N/A")
+            self.face_count_label.setText("Faces: N/A   Vertices: N/A   Edges: N/A")
